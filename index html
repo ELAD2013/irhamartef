@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>עיר המרתף - סטטוס</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            box-sizing: border-box;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        
+        .status-open {
+            background: linear-gradient(135deg, #10b981, #059669);
+        }
+        
+        .status-closed {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+        }
+        
+        .admin-panel {
+            background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 text-white font-sans">
+    <!-- כותרת ראשית -->
+    <div class="text-center py-8">
+        <h1 class="text-5xl font-bold mb-2 bg-gradient-to-r from-yellow-400 to-orange-500 bg-clip-text text-transparent">
+            🏰 עיר המרתף
+        </h1>
+        <p class="text-xl text-gray-300">מערכת ניהול סטטוס בזמן אמת</p>
+    </div>
+
+    <!-- סטטוס נוכחי -->
+    <div class="max-w-md mx-auto mb-8 px-4">
+        <div id="statusCard" class="status-closed rounded-3xl p-8 text-center shadow-2xl transform transition-all duration-500">
+            <div class="text-6xl mb-4">
+                <span id="statusIcon">🔒</span>
+            </div>
+            <h2 class="text-3xl font-bold mb-2">העיר כרגע</h2>
+            <div id="statusText" class="text-4xl font-extrabold mb-4">סגורה</div>
+            <div class="text-sm opacity-75">
+                עדכון אחרון: <span id="lastUpdate">טוען...</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- כפתור לוח בקרה -->
+    <div class="text-center mb-8">
+        <button id="adminBtn" class="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 px-8 py-4 rounded-2xl font-bold text-lg shadow-lg transform transition-all duration-200 hover:scale-105">
+            🛠️ לוח בקרה למנהלים
+        </button>
+    </div>
+
+    <!-- לוח בקרה (מוסתר בהתחלה) -->
+    <div id="adminPanel" class="hidden max-w-md mx-auto px-4">
+        <div class="admin-panel rounded-3xl p-8 shadow-2xl">
+            <h3 class="text-2xl font-bold mb-6 text-center">🔐 לוח בקרה</h3>
+            
+            <!-- הזנת קוד -->
+            <div id="codeInput" class="mb-6">
+                <label class="block text-sm font-medium mb-2">הזן קוד גישה:</label>
+                <input type="password" id="accessCode" class="w-full px-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-gray-300 focus:outline-none focus:ring-2 focus:ring-yellow-400" placeholder="הזן קוד...">
+                <button id="verifyCode" class="w-full mt-3 bg-yellow-500 hover:bg-yellow-600 text-black font-bold py-3 rounded-xl transition-colors duration-200">
+                    ✅ אמת קוד
+                </button>
+            </div>
+
+            <!-- בקרות מנהל (מוסתרות עד אימות) -->
+            <div id="adminControls" class="hidden">
+                <div class="text-center mb-6">
+                    <p class="text-green-300 font-medium">✅ גישה מאושרת</p>
+                </div>
+                
+                <div class="space-y-4">
+                    <button id="openCity" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl transition-colors duration-200 flex items-center justify-center gap-2">
+                        🔓 פתח את העיר
+                    </button>
+                    
+                    <button id="closeCity" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-4 rounded-xl transition-colors duration-200 flex items-center justify-center gap-2">
+                        🔒 סגור את העיר
+                    </button>
+                </div>
+
+                <button id="logoutAdmin" class="w-full mt-6 bg-gray-600 hover:bg-gray-700 text-white font-medium py-2 rounded-xl transition-colors duration-200">
+                    🚪 יציאה מלוח הבקרה
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- הודעות מערכת -->
+    <div id="notifications" class="fixed top-4 left-4 right-4 z-50"></div>
+
+    <script>
+        // מצב העיר (מדמה בסיס נתונים משותף)
+        let cityStatus = {
+            isOpen: false,
+            lastUpdate: new Date().toLocaleString('he-IL')
+        };
+
+        // אלמנטים
+        const statusCard = document.getElementById('statusCard');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusText = document.getElementById('statusText');
+        const lastUpdate = document.getElementById('lastUpdate');
+        const adminBtn = document.getElementById('adminBtn');
+        const adminPanel = document.getElementById('adminPanel');
+        const codeInput = document.getElementById('codeInput');
+        const adminControls = document.getElementById('adminControls');
+        const accessCode = document.getElementById('accessCode');
+        const verifyCode = document.getElementById('verifyCode');
+        const openCity = document.getElementById('openCity');
+        const closeCity = document.getElementById('closeCity');
+        const logoutAdmin = document.getElementById('logoutAdmin');
+        const notifications = document.getElementById('notifications');
+
+        // קוד הגישה
+        const ADMIN_CODE = '112233';
+
+        // פונקציה להצגת הודעות
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            const colors = {
+                success: 'bg-green-500',
+                error: 'bg-red-500',
+                info: 'bg-blue-500'
+            };
+            
+            notification.className = `${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg mb-2 transform transition-all duration-300 translate-x-full`;
+            notification.textContent = message;
+            
+            notifications.appendChild(notification);
+            
+            // אנימציה של כניסה
+            setTimeout(() => {
+                notification.classList.remove('translate-x-full');
+            }, 100);
+            
+            // הסרה אוטומטית
+            setTimeout(() => {
+                notification.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (notification.parentNode) {
+                        notification.parentNode.removeChild(notification);
+                    }
+                }, 300);
+            }, 3000);
+        }
+
+        // עדכון תצוגת הסטטוס
+        function updateStatusDisplay() {
+            if (cityStatus.isOpen) {
+                statusCard.className = 'status-open rounded-3xl p-8 text-center shadow-2xl transform transition-all duration-500';
+                statusIcon.textContent = '🔓';
+                statusText.textContent = 'פתוחה';
+            } else {
+                statusCard.className = 'status-closed rounded-3xl p-8 text-center shadow-2xl transform transition-all duration-500';
+                statusIcon.textContent = '🔒';
+                statusText.textContent = 'סגורה';
+            }
+            
+            lastUpdate.textContent = cityStatus.lastUpdate;
+            
+            // אפקט פעימה לעדכון
+            statusCard.classList.add('pulse-animation');
+            setTimeout(() => {
+                statusCard.classList.remove('pulse-animation');
+            }, 1000);
+        }
+
+        // שינוי סטטוס העיר
+        function changeCityStatus(isOpen) {
+            cityStatus.isOpen = isOpen;
+            cityStatus.lastUpdate = new Date().toLocaleString('he-IL');
+            
+            // שמירה ב-localStorage (מדמה סנכרון)
+            localStorage.setItem('cityStatus', JSON.stringify(cityStatus));
+            
+            updateStatusDisplay();
+            
+            const message = isOpen ? '🔓 העיר נפתחה בהצלחה!' : '🔒 העיר נסגרה בהצלחה!';
+            showNotification(message, 'success');
+            
+            // שידור לכל הטאבים הפתוחים (מדמה עדכון בזמן אמת)
+            broadcastStatusChange();
+        }
+
+        // שידור שינויים לטאבים אחרים
+        function broadcastStatusChange() {
+            // שימוש ב-BroadcastChannel לסנכרון בין טאבים
+            if ('BroadcastChannel' in window) {
+                const channel = new BroadcastChannel('cityStatus');
+                channel.postMessage(cityStatus);
+            }
+            
+            // גם עם storage events
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: 'cityStatus',
+                newValue: JSON.stringify(cityStatus)
+            }));
+        }
+
+        // האזנה לשינויים מטאבים אחרים
+        function listenForStatusChanges() {
+            // BroadcastChannel
+            if ('BroadcastChannel' in window) {
+                const channel = new BroadcastChannel('cityStatus');
+                channel.onmessage = (event) => {
+                    cityStatus = event.data;
+                    updateStatusDisplay();
+                    showNotification('📡 הסטטוס עודכן מהמערכת', 'info');
+                };
+            }
+            
+            // Storage events
+            window.addEventListener('storage', (e) => {
+                if (e.key === 'cityStatus' && e.newValue) {
+                    cityStatus = JSON.parse(e.newValue);
+                    updateStatusDisplay();
+                    showNotification('📡 הסטטוס עודכן מהמערכת', 'info');
+                }
+            });
+        }
+
+        // טעינת סטטוס מהזיכרון
+        function loadStatus() {
+            const saved = localStorage.getItem('cityStatus');
+            if (saved) {
+                cityStatus = JSON.parse(saved);
+            }
+            updateStatusDisplay();
+        }
+
+        // אירועי לחיצה
+        adminBtn.addEventListener('click', () => {
+            adminPanel.classList.toggle('hidden');
+            if (!adminPanel.classList.contains('hidden')) {
+                accessCode.focus();
+            }
+        });
+
+        verifyCode.addEventListener('click', () => {
+            if (accessCode.value === ADMIN_CODE) {
+                codeInput.classList.add('hidden');
+                adminControls.classList.remove('hidden');
+                showNotification('✅ גישה מאושרת בהצלחה!', 'success');
+                accessCode.value = '';
+            } else {
+                showNotification('❌ קוד שגוי! נסה שוב', 'error');
+                accessCode.value = '';
+                accessCode.focus();
+            }
+        });
+
+        // Enter key לאימות קוד
+        accessCode.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                verifyCode.click();
+            }
+        });
+
+        openCity.addEventListener('click', () => {
+            changeCityStatus(true);
+        });
+
+        closeCity.addEventListener('click', () => {
+            changeCityStatus(false);
+        });
+
+        logoutAdmin.addEventListener('click', () => {
+            adminControls.classList.add('hidden');
+            codeInput.classList.remove('hidden');
+            adminPanel.classList.add('hidden');
+            showNotification('🚪 יצאת מלוח הבקרה', 'info');
+        });
+
+        // עדכון זמן כל דקה
+        setInterval(() => {
+            if (cityStatus.lastUpdate) {
+                // עדכון התצוגה אם עבר זמן רב
+                const now = new Date();
+                const lastUpdateTime = new Date(cityStatus.lastUpdate);
+                const diffMinutes = Math.floor((now - lastUpdateTime) / (1000 * 60));
+                
+                if (diffMinutes > 0) {
+                    lastUpdate.textContent = cityStatus.lastUpdate + ` (לפני ${diffMinutes} דקות)`;
+                }
+            }
+        }, 60000);
+
+        // אתחול
+        loadStatus();
+        listenForStatusChanges();
+        
+        // הודעת ברוכים הבאים
+        setTimeout(() => {
+            showNotification('🏰 ברוכים הבאים לעיר המרתף!', 'info');
+        }, 500);
+    </script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'984a789f05dfaf1f',t:'MTc1ODgwMjc4MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
