@@ -179,12 +179,19 @@
             }, 1000);
         }
 
+        // ערוץ תקשורת בזמן אמת
+        const statusChannel = new BroadcastChannel('cityStatusRealTime');
+        let isUpdating = false;
+
         // שינוי סטטוס העיר
         function changeCityStatus(isOpen) {
+            if (isUpdating) return; // מניעת לולאות עדכון
+            
             cityStatus.isOpen = isOpen;
             cityStatus.lastUpdate = new Date().toLocaleString('he-IL');
+            cityStatus.updateId = Date.now(); // מזהה ייחודי לעדכון
             
-            // שמירה ב-localStorage (מדמה סנכרון)
+            // שמירה מקומית
             localStorage.setItem('cityStatus', JSON.stringify(cityStatus));
             
             updateStatusDisplay();
@@ -192,45 +199,81 @@
             const message = isOpen ? '🔓 העיר נפתחה בהצלחה!' : '🔒 העיר נסגרה בהצלחה!';
             showNotification(message, 'success');
             
-            // שידור לכל הטאבים הפתוחים (מדמה עדכון בזמן אמת)
+            // שידור מיידי לכל הטאבים והמכשירים
             broadcastStatusChange();
         }
 
-        // שידור שינויים לטאבים אחרים
+        // שידור שינויים בזמן אמת
         function broadcastStatusChange() {
-            // שימוש ב-BroadcastChannel לסנכרון בין טאבים
-            if ('BroadcastChannel' in window) {
-                const channel = new BroadcastChannel('cityStatus');
-                channel.postMessage(cityStatus);
-            }
+            // שידור לטאבים באותו דפדפן
+            statusChannel.postMessage({
+                type: 'statusUpdate',
+                data: cityStatus,
+                timestamp: Date.now()
+            });
             
-            // גם עם storage events
-            window.dispatchEvent(new StorageEvent('storage', {
-                key: 'cityStatus',
-                newValue: JSON.stringify(cityStatus)
+            // שידור גלובלי (מדמה שרת)
+            simulateServerBroadcast();
+        }
+
+        // מדמה שידור שרת לכל המכשירים
+        function simulateServerBroadcast() {
+            // שמירה עם חותמת זמן לזיהוי עדכונים חדשים
+            const globalStatus = {
+                ...cityStatus,
+                globalUpdateTime: Date.now()
+            };
+            localStorage.setItem('globalCityStatus', JSON.stringify(globalStatus));
+            
+            // יצירת אירוע מותאם אישית
+            window.dispatchEvent(new CustomEvent('cityStatusGlobalUpdate', {
+                detail: globalStatus
             }));
         }
 
-        // האזנה לשינויים מטאבים אחרים
+        // האזנה לעדכונים בזמן אמת
         function listenForStatusChanges() {
-            // BroadcastChannel
-            if ('BroadcastChannel' in window) {
-                const channel = new BroadcastChannel('cityStatus');
-                channel.onmessage = (event) => {
-                    cityStatus = event.data;
+            // האזנה לטאבים באותו דפדפן
+            statusChannel.onmessage = (event) => {
+                if (event.data.type === 'statusUpdate') {
+                    isUpdating = true;
+                    cityStatus = event.data.data;
                     updateStatusDisplay();
-                    showNotification('📡 הסטטוס עודכן מהמערכת', 'info');
-                };
-            }
+                    showNotification('📱 עודכן מטאב אחר', 'info');
+                    setTimeout(() => { isUpdating = false; }, 100);
+                }
+            };
             
-            // Storage events
-            window.addEventListener('storage', (e) => {
-                if (e.key === 'cityStatus' && e.newValue) {
-                    cityStatus = JSON.parse(e.newValue);
+            // האזנה לעדכונים גלובליים (מדמה עדכונים ממכשירים אחרים)
+            window.addEventListener('cityStatusGlobalUpdate', (event) => {
+                if (!isUpdating && event.detail.updateId !== cityStatus.updateId) {
+                    isUpdating = true;
+                    cityStatus = event.detail;
                     updateStatusDisplay();
-                    showNotification('📡 הסטטוס עודכן מהמערכת', 'info');
+                    showNotification('🌐 עודכן ממכשיר אחר', 'info');
+                    setTimeout(() => { isUpdating = false; }, 100);
                 }
             });
+            
+            // בדיקה תקופתית לעדכונים (מדמה polling לשרת)
+            setInterval(checkForGlobalUpdates, 2000);
+        }
+
+        // בדיקת עדכונים גלובליים
+        function checkForGlobalUpdates() {
+            const globalStatus = localStorage.getItem('globalCityStatus');
+            if (globalStatus) {
+                const parsed = JSON.parse(globalStatus);
+                if (parsed.globalUpdateTime > (cityStatus.globalUpdateTime || 0) && 
+                    parsed.updateId !== cityStatus.updateId && !isUpdating) {
+                    
+                    isUpdating = true;
+                    cityStatus = parsed;
+                    updateStatusDisplay();
+                    showNotification('🔄 סונכרן עם המערכת', 'info');
+                    setTimeout(() => { isUpdating = false; }, 100);
+                }
+            }
         }
 
         // טעינת סטטוס מהזיכרון
@@ -308,5 +351,5 @@
             showNotification('🏰 ברוכים הבאים לעיר המרתף!', 'info');
         }, 500);
     </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'984a789f05dfaf1f',t:'MTc1ODgwMjc4MC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'9850c48c34aeefea',t:'MTc1ODg2ODgwNC4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
